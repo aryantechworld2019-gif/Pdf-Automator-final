@@ -129,15 +129,30 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     const formData = new FormData(e.target);
     const data = Object.fromEntries(formData.entries());
 
-    if (editingUser) {
-      await window.electronAPI.updateUser({ ...editingUser, ...data });
-      addLog(`Updated user profile: ${data.username}`);
-    } else {
-      await window.electronAPI.addUser(data);
-      addLog(`Spawned new user: ${data.username}`);
+    try {
+      let result;
+      if (editingUser) {
+        result = await window.electronAPI.updateUser({ ...editingUser, ...data });
+        if (result.success) {
+          addLog(`Updated user profile: ${data.username}`);
+        } else {
+          alert('Error updating user: ' + result.error);
+          return;
+        }
+      } else {
+        result = await window.electronAPI.addUser(data);
+        if (result.success) {
+          addLog(`Spawned new user: ${data.username}`);
+        } else {
+          alert('Error creating user: ' + result.error);
+          return;
+        }
+      }
+      setShowModal(false);
+      loadUsers();
+    } catch (error) {
+      alert('Unexpected error: ' + error.message);
     }
-    setShowModal(false);
-    loadUsers();
   };
 
   const handleDelete = async (id) => {

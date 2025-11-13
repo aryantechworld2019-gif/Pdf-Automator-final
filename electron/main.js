@@ -9,6 +9,8 @@ const XLSX = require('xlsx');
 const store = new Store();
 
 let mainWindow;
+const isDev = process.env.NODE_ENV === 'development';
+const tempFiles = new Set(); // Track temp files for cleanup
 
 // Initialize default users if not exists
 if (!store.get('users')) {
@@ -61,17 +63,43 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      // Content Security Policy
+      webSecurity: true,
     },
     autoHideMenuBar: true,
+    show: false, // Don't show until ready
+  });
+
+  // Show window when ready to prevent flickering
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
   });
 
   // Load the app
-  if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
+  if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  // Set CSP
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; " +
+          "script-src 'self' 'unsafe-inline'; " +
+          "style-src 'self' 'unsafe-inline'; " +
+          "img-src 'self' data: https://api.dicebear.com; " +
+          "font-src 'self' data:; " +
+          "connect-src 'self' https://api.dicebear.com"
+        ]
+      }
+    });
+  });
 }
 
 app.whenReady().then(createWindow);
@@ -87,6 +115,76 @@ app.on('activate', () => {
     createWindow();
   }
 });
+
+// Cleanup before quit
+app.on('before-quit', async (e) => {
+  e.preventDefault();
+
+  // Clean up temp files
+  for (const filePath of tempFiles) {
+    try {
+      await fs.unlink(filePath);
+    } catch (error) {
+      console.error('Error cleaning temp file:', error);
+    }
+  }
+
+  app.exit(0);
+});
+
+// ==================== UTILITY FUNCTIONS ====================
+
+// Validate user input
+function validateUserData(userData) {
+  const errors = [];
+
+  if (!userData.username || userData.username.length < 3) {
+    errors.push('Username must be at least 3 characters');
+  }
+
+  if (!userData.password || userData.password.length < 3) {
+    errors.push('Password must be at least 3 characters');
+  }
+
+  if (!userData.name || userData.name.length < 2) {
+    errors.push('Name must be at least 2 characters');
+  }
+
+  if (!userData.email || !userData.email.includes('@')) {
+    errors.push('Valid email is required');
+  }
+
+  if (!['admin', 'client'].includes(userData.role)) {
+    errors.push('Role must be admin or client');
+  }
+
+  return errors;
+}
+
+// Generate unique ID
+function generateUniqueId(existingIds = []) {
+  const maxId = existingIds.length > 0 ? Math.max(...existingIds) : 0;
+  return maxId + 1;
+}
+
+// Validate file path
+function isValidFilePath(filePath) {
+  try {
+    // Check for path traversal attempts
+    const normalized = path.normalize(filePath);
+    const resolved = path.resolve(filePath);
+    return normalized === resolved && !filePath.includes('..');
+  } catch {
+    return false;
+  }
+}
+
+// Validate page range string
+function isValidPageRange(rangeStr) {
+  if (!rangeStr) return false;
+  const pattern = /^(\d+(-\d+)?)(,\s*\d+(-\d+)?)*$/;
+  return pattern.test(String(rangeStr).trim());
+}
 
 // ==================== IPC HANDLERS ====================
 
@@ -109,28 +207,58 @@ ipcMain.handle('users:getAll', async () => {
 });
 
 ipcMain.handle('users:add', async (event, userData) => {
+  // Validate input
+  const validationErrors = validateUserData(userData);
+  if (validationErrors.length > 0) {
+    return { success: false, error: validationErrors.join(', ') };
+  }
+
   const users = store.get('users', []);
+
+  // Check for duplicate username
+  if (users.find(u => u.username === userData.username)) {
+    return { success: false, error: 'Username already exists' };
+  }
+
+  // Generate unique ID
+  const existingIds = users.map(u => u.id);
   const newUser = {
     ...userData,
-    id: Date.now(),
-    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData.username}`
+    id: generateUniqueId(existingIds),
+    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userData.username)}`,
+    createdAt: new Date().toISOString()
   };
+
   users.push(newUser);
   store.set('users', users);
   addLog(`Created new user: ${userData.username}`, 'info');
-  return newUser;
+  return { success: true, user: newUser };
 });
 
 ipcMain.handle('users:update', async (event, userData) => {
+  // Validate input
+  const validationErrors = validateUserData(userData);
+  if (validationErrors.length > 0) {
+    return { success: false, error: validationErrors.join(', ') };
+  }
+
   const users = store.get('users', []);
   const index = users.findIndex(u => u.id === userData.id);
+
   if (index !== -1) {
-    users[index] = userData;
+    // Check for duplicate username (excluding current user)
+    const duplicateUser = users.find(u => u.username === userData.username && u.id !== userData.id);
+    if (duplicateUser) {
+      return { success: false, error: 'Username already exists' };
+    }
+
+    users[index] = { ...userData, updatedAt: new Date().toISOString() };
     store.set('users', users);
     addLog(`Updated user: ${userData.username}`, 'info');
-    return userData;
+    return { success: true, user: users[index] };
   }
-  return null;
+
+  return { success: false, error: 'User not found' };
 });
 
 ipcMain.handle('users:delete', async (event, userId) => {
@@ -208,22 +336,52 @@ ipcMain.handle('file:selectPDF', async () => {
 // === EXCEL PARSING ===
 ipcMain.handle('excel:parse', async (event, filePath) => {
   try {
+    // Validate file path
+    if (!isValidFilePath(filePath)) {
+      throw new Error('Invalid file path');
+    }
+
+    // Check file exists and size
+    const stats = await fs.stat(filePath);
+    const maxSize = 50 * 1024 * 1024; // 50MB limit
+    if (stats.size > maxSize) {
+      throw new Error(`File too large. Maximum size is ${maxSize / 1024 / 1024}MB`);
+    }
+
     addLog(`Parsing Excel file: ${path.basename(filePath)}`, 'info');
 
     const workbook = XLSX.readFile(filePath);
+
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+      throw new Error('Excel file has no sheets');
+    }
+
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(worksheet);
 
-    // Transform data to expected format
-    const transformedData = data.map((row, index) => ({
-      id: index + 1,
-      date: row.Date || row.date || new Date().toISOString().split('T')[0],
-      docType: row['Document Type'] || row.docType || row.type || 'Unknown',
-      pages: row.Pages || row.pages || row['Page Range'] || '1',
-      pageCount: calculatePageCount(row.Pages || row.pages || row['Page Range'] || '1'),
-      note: row.Note || row.note || row.Notes || ''
-    }));
+    if (data.length === 0) {
+      throw new Error('Excel sheet is empty');
+    }
+
+    // Transform data to expected format with validation
+    const transformedData = data.map((row, index) => {
+      const pages = row.Pages || row.pages || row['Page Range'] || '1';
+
+      // Validate page range format
+      if (!isValidPageRange(pages)) {
+        addLog(`Warning: Invalid page range "${pages}" in row ${index + 1}. Using "1" instead.`, 'warning');
+      }
+
+      return {
+        id: index + 1,
+        date: row.Date || row.date || new Date().toISOString().split('T')[0],
+        docType: row['Document Type'] || row.docType || row.type || 'Unknown',
+        pages: String(pages),
+        pageCount: calculatePageCount(pages),
+        note: String(row.Note || row.note || row.Notes || '')
+      };
+    });
 
     addLog(`Successfully parsed ${transformedData.length} records from Excel`, 'success');
     return { success: true, data: transformedData };
@@ -235,23 +393,46 @@ ipcMain.handle('excel:parse', async (event, filePath) => {
 
 function calculatePageCount(pageRange) {
   if (!pageRange) return 1;
-  const range = String(pageRange);
+  const range = String(pageRange).trim();
 
-  if (range.includes('-')) {
-    const [start, end] = range.split('-').map(p => parseInt(p.trim()));
-    return end - start + 1;
+  try {
+    if (range.includes('-')) {
+      const [start, end] = range.split('-').map(p => parseInt(p.trim()));
+      if (isNaN(start) || isNaN(end) || start > end) return 1;
+      return Math.max(1, end - start + 1);
+    }
+
+    if (range.includes(',')) {
+      const parts = range.split(',').filter(p => !isNaN(parseInt(p.trim())));
+      return Math.max(1, parts.length);
+    }
+
+    const num = parseInt(range);
+    return isNaN(num) ? 1 : 1;
+  } catch {
+    return 1;
   }
-
-  if (range.includes(',')) {
-    return range.split(',').length;
-  }
-
-  return 1;
 }
 
 // === PDF PROCESSING ===
 ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig, isBatesEnabled }) => {
   try {
+    // Validate inputs
+    if (!isValidFilePath(pdfPath)) {
+      throw new Error('Invalid PDF file path');
+    }
+
+    if (!selectedRows || selectedRows.length === 0) {
+      throw new Error('No rows selected for processing');
+    }
+
+    // Check file exists and size
+    const stats = await fs.stat(pdfPath);
+    const maxSize = 200 * 1024 * 1024; // 200MB limit for PDFs
+    if (stats.size > maxSize) {
+      throw new Error(`PDF too large. Maximum size is ${maxSize / 1024 / 1024}MB`);
+    }
+
     addLog(`Processing PDF with ${selectedRows.length} selected documents`, 'info');
 
     // Read the source PDF
@@ -259,18 +440,33 @@ ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig
     const pdfDoc = await PDFDocument.load(pdfBytes);
     const totalPages = pdfDoc.getPageCount();
 
+    if (totalPages === 0) {
+      throw new Error('PDF has no pages');
+    }
+
     // Create output PDF
     const outputPdf = await PDFDocument.create();
 
     // Sort rows by date
     const sortedRows = [...selectedRows].sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    let currentBatesNumber = parseInt(batesConfig.start) || 1;
+    // Validate Bates config
+    const batesStart = parseInt(batesConfig.start);
+    if (isBatesEnabled && (isNaN(batesStart) || batesStart < 0)) {
+      throw new Error('Invalid Bates starting number');
+    }
+
+    let currentBatesNumber = batesStart || 1;
     const processedData = [];
 
     for (const row of sortedRows) {
       const pageRange = parsePageRange(row.pages, totalPages);
       const startBates = currentBatesNumber;
+
+      if (pageRange.length === 0) {
+        addLog(`Warning: No valid pages found for "${row.docType}"`, 'warning');
+        continue;
+      }
 
       for (const pageNum of pageRange) {
         if (pageNum > 0 && pageNum <= totalPages) {
@@ -294,12 +490,20 @@ ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig
       });
     }
 
+    if (outputPdf.getPageCount() === 0) {
+      throw new Error('No pages were added to output PDF. Check your page ranges.');
+    }
+
     const processedPdfBytes = await outputPdf.save();
 
-    // Save to temp directory
+    // Save to temp directory with unique name
     const tempDir = app.getPath('temp');
-    const outputPath = path.join(tempDir, 'processed_output.pdf');
+    const timestamp = Date.now();
+    const outputPath = path.join(tempDir, `pdf_automator_${timestamp}.pdf`);
     await fs.writeFile(outputPath, processedPdfBytes);
+
+    // Track temp file for cleanup
+    tempFiles.add(outputPath);
 
     addLog(`PDF processing complete. ${outputPdf.getPageCount()} pages in output.`, 'success');
 
@@ -342,20 +546,30 @@ function parsePageRange(rangeStr, maxPages) {
   const range = String(rangeStr).trim();
   const pages = [];
 
-  if (range.includes('-')) {
-    const [start, end] = range.split('-').map(p => parseInt(p.trim()));
-    for (let i = start; i <= Math.min(end, maxPages); i++) {
-      pages.push(i);
+  try {
+    if (range.includes('-')) {
+      const [start, end] = range.split('-').map(p => parseInt(p.trim()));
+      if (isNaN(start) || isNaN(end)) return pages;
+
+      for (let i = Math.max(1, start); i <= Math.min(end, maxPages); i++) {
+        pages.push(i);
+      }
+    } else if (range.includes(',')) {
+      const parts = range.split(',');
+      parts.forEach(p => {
+        const num = parseInt(p.trim());
+        if (!isNaN(num) && num > 0 && num <= maxPages) {
+          pages.push(num);
+        }
+      });
+    } else {
+      const num = parseInt(range);
+      if (!isNaN(num) && num > 0 && num <= maxPages) {
+        pages.push(num);
+      }
     }
-  } else if (range.includes(',')) {
-    const parts = range.split(',');
-    parts.forEach(p => {
-      const num = parseInt(p.trim());
-      if (num <= maxPages) pages.push(num);
-    });
-  } else {
-    const num = parseInt(range);
-    if (num <= maxPages) pages.push(num);
+  } catch (error) {
+    console.error('Error parsing page range:', error);
   }
 
   return pages;

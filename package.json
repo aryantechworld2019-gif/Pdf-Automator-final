@@ -2,13 +2,14 @@
   "name": "pdf-automator",
   "version": "1.0.0",
   "description": "Dynamic PDF Automator with Bates Stamping",
-  "main": "dist-electron/main.js",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && electron-builder",
+    "build": "vite build",
     "preview": "vite preview",
-    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "vite build && electron-builder"
+    "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "vite build && electron-builder",
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": ["electron", "react", "pdf", "bates-stamping"],
   "author": "Your Name",
@@ -35,21 +36,27 @@
   "build": {
     "appId": "com.pdfautomator.app",
     "productName": "PDF Automator",
+    "asar": true,
+    "asarUnpack": ["**/*.node"],
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "electron/**/*",
+      "package.json"
     ],
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "assets"
     },
     "mac": {
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "target": ["dmg", "zip"]
     },
     "win": {
-      "target": "nsis"
+      "target": ["nsis", "portable"]
     },
     "linux": {
-      "target": "AppImage"
+      "target": ["AppImage", "deb"],
+      "category": "Office"
     }
   }
 }

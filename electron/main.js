@@ -358,15 +358,62 @@ ipcMain.handle('excel:parse', async (event, filePath) => {
 
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
+
+    // Get headers to identify column positions
+    const headers = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] || [];
     const data = XLSX.utils.sheet_to_json(worksheet);
 
     if (data.length === 0) {
       throw new Error('Excel sheet is empty');
     }
 
+    // Find column indices (case-insensitive)
+    const firstColName = headers[0]; // First column is always date
+    const docTypeCol = headers.findIndex(h =>
+      String(h).toLowerCase().includes('document') ||
+      String(h).toLowerCase().includes('type') ||
+      String(h).toLowerCase() === 'doctype'
+    );
+    const pagesCol = headers.findIndex(h =>
+      String(h).toLowerCase().includes('page') ||
+      String(h).toLowerCase() === 'pages'
+    );
+    const noteCol = headers.findIndex(h =>
+      String(h).toLowerCase().includes('note')
+    );
+
+    addLog(`Detected columns: Date="${firstColName}", DocType="${headers[docTypeCol]}", Pages="${headers[pagesCol]}", Note="${headers[noteCol]}"`, 'info');
+
     // Transform data to expected format with validation
     const transformedData = data.map((row, index) => {
-      const pages = row.Pages || row.pages || row['Page Range'] || '1';
+      // First column is ALWAYS the date
+      const dateValue = row[firstColName] || new Date().toISOString().split('T')[0];
+
+      // Get other columns by detected indices
+      const docTypeValue = docTypeCol >= 0 ? row[headers[docTypeCol]] : null;
+      const pagesValue = pagesCol >= 0 ? row[headers[pagesCol]] : null;
+      const noteValue = noteCol >= 0 ? row[headers[noteCol]] : null;
+
+      // Fallback to any value for document type if not found
+      const docType = docTypeValue ||
+                      row['Document Type'] ||
+                      row.docType ||
+                      row.type ||
+                      'Unknown';
+
+      // Fallback for pages
+      const pages = pagesValue ||
+                    row.Pages ||
+                    row.pages ||
+                    row['Page Range'] ||
+                    '1';
+
+      // Fallback for note
+      const note = noteValue ||
+                   row.Note ||
+                   row.note ||
+                   row.Notes ||
+                   '';
 
       // Validate page range format
       if (!isValidPageRange(pages)) {
@@ -375,11 +422,11 @@ ipcMain.handle('excel:parse', async (event, filePath) => {
 
       return {
         id: index + 1,
-        date: row.Date || row.date || new Date().toISOString().split('T')[0],
-        docType: row['Document Type'] || row.docType || row.type || 'Unknown',
+        date: String(dateValue),
+        docType: String(docType),
         pages: String(pages),
         pageCount: calculatePageCount(pages),
-        note: String(row.Note || row.note || row.Notes || '')
+        note: String(note)
       };
     });
 

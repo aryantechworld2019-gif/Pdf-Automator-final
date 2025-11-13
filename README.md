@@ -54,21 +54,36 @@ npm run electron:build
 
 Your Excel file should have the following columns:
 
-| Column Name | Description | Example |
-|------------|-------------|---------|
-| Date | Document date | 2023-12-25 |
-| Document Type | Type of document | Invoice |
-| Pages | Page range in PDF | 1-5 or 1,3,5 |
-| Note | Optional note | Description here |
+| Column | Position | Header Name | Description | Example |
+|--------|----------|-------------|-------------|---------|
+| **Date** | **First (Column A)** | Any name | Document date (text or date format) | 2023-12-25 |
+| Document Type | Any | Contains "type" or "document" | Type of document | Invoice |
+| Pages | Any | Contains "page" | Page range in PDF | 1-5 or 1,3,5 |
+| Note | Any | Contains "note" (optional) | Optional note | Description here |
 
-### Example Excel File
+**Important**:
+- ⚠️ The **first column must always contain dates** (but the header name can be anything)
+- Other columns can be in any order and use flexible header names
+- System auto-detects columns by searching for keywords in headers (case-insensitive)
 
+### Example Excel Files
+
+**Standard format:**
 ```
 Date          | Document Type    | Pages | Note
 2023-12-25    | Expense Report   | 1-5   | Santa bribes
 2023-01-01    | Resolution       | 6     | New year
 2023-07-04    | Safety Incident  | 7-8   | Fireworks
 ```
+
+**Custom headers (also works!):**
+```
+Transaction Date | Doc Type  | Page Range | Comments
+12/25/2023      | Invoice   | 1-3        | Q4 billing
+01/15/2024      | Contract  | 4-6        | New client
+```
+
+See `EXCEL_TEMPLATE.md` for complete documentation.
 
 ## Project Structure
 

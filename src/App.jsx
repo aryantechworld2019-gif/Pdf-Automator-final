@@ -28,9 +28,9 @@ const LoginForm = ({ onLogin, error }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 p-4 font-sans">
+    <div className="h-screen flex items-center justify-center bg-gray-900 p-4 font-sans overflow-hidden">
       <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(#4f46e5 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
-      <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md relative z-10 border-t-8 border-blue-600">
+      <div className="bg-white p-6 md:p-8 rounded-2xl shadow-2xl w-full max-w-md relative z-10 border-t-8 border-blue-600 max-h-[90vh] overflow-auto">
         <div className="text-center mb-8">
           <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
             <Shield className="text-blue-600 w-8 h-8" />
@@ -163,91 +163,95 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 font-sans">
-      <main className="flex flex-col h-screen">
-        {/* HEADER */}
-        <header className="bg-white border-b border-gray-200 p-6 flex justify-between items-center shadow-sm">
-           <h2 className="text-2xl font-bold text-gray-800">Dashboard</h2>
-           <div className="flex items-center gap-4">
+    <div className="h-screen bg-gray-100 font-sans overflow-hidden">
+      <main className="flex flex-col h-full">
+        {/* HEADER - Fixed height */}
+        <header className="flex-shrink-0 bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm">
+           <h2 className="text-xl font-bold text-gray-800">Dashboard</h2>
+           <div className="flex items-center gap-3">
              <div className="text-right hidden sm:block">
                <p className="text-sm font-bold text-gray-900">{currentUser.name}</p>
                <p className="text-xs text-gray-500">Super Admin</p>
              </div>
              <img src={currentUser.avatar} className="w-10 h-10 rounded-full border-2 border-purple-500" alt="Profile" />
-             <button onClick={onLogout} className="text-gray-500 hover:text-red-500"><LogOut /></button>
+             <button onClick={onLogout} className="text-gray-500 hover:text-red-500"><LogOut size={20} /></button>
            </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-8">
+        {/* CONTENT - Scrollable */}
+        <div className="flex-1 overflow-auto p-4 md:p-6">
            {/* STATS CARDS */}
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               {stats.map((stat, i) => (
-                <div key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center gap-4">
-                  <div className={`${stat.color} p-4 rounded-lg text-white shadow-lg`}>
-                    <stat.icon size={24} />
+                <div key={i} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3">
+                  <div className={`${stat.color} p-3 rounded-lg text-white shadow-lg`}>
+                    <stat.icon size={20} />
                   </div>
                   <div>
-                    <p className="text-gray-500 text-sm font-medium">{stat.label}</p>
-                    <h3 className="text-2xl font-bold text-gray-800">{stat.value}</h3>
+                    <p className="text-gray-500 text-xs font-medium">{stat.label}</p>
+                    <h3 className="text-xl font-bold text-gray-800">{stat.value}</h3>
                   </div>
                 </div>
               ))}
            </div>
 
-           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+           {/* MAIN CONTENT - Responsive grid */}
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* USER TABLE */}
-              <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
-                 <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50 rounded-t-xl">
-                   <h3 className="font-bold text-lg text-gray-800">User Database</h3>
-                   <div className="flex gap-3">
-                     <div className="relative">
-                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                       <input
-                         className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none"
-                         placeholder="Search users..."
-                         value={searchTerm}
-                         onChange={(e) => setSearchTerm(e.target.value)}
-                       />
+              <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col" style={{maxHeight: 'calc(100vh - 280px)'}}>
+                 <div className="flex-shrink-0 p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
+                   <div className="flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
+                     <h3 className="font-bold text-base text-gray-800">User Database</h3>
+                     <div className="flex gap-2 w-full sm:w-auto">
+                       <div className="relative flex-1 sm:flex-initial">
+                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                         <input
+                           className="w-full sm:w-auto pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                           placeholder="Search..."
+                           value={searchTerm}
+                           onChange={(e) => setSearchTerm(e.target.value)}
+                         />
+                       </div>
+                       <button onClick={handleCreate} className="flex-shrink-0 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md transition-all">
+                         <UserPlus size={16} /> <span className="hidden sm:inline">Add</span>
+                       </button>
                      </div>
-                     <button onClick={handleCreate} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md transition-all">
-                       <UserPlus size={16} /> Add User
-                     </button>
                    </div>
                  </div>
 
-                 <div className="overflow-auto">
+                 <div className="flex-1 overflow-auto">
                    <table className="w-full text-left">
-                     <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-bold">
+                     <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-bold sticky top-0">
                        <tr>
-                         <th className="px-6 py-3">User</th>
-                         <th className="px-6 py-3">Role</th>
-                         <th className="px-6 py-3">Status</th>
-                         <th className="px-6 py-3 text-right">Actions</th>
+                         <th className="px-4 py-3">User</th>
+                         <th className="px-4 py-3">Role</th>
+                         <th className="px-4 py-3 hidden sm:table-cell">Status</th>
+                         <th className="px-4 py-3 text-right">Actions</th>
                        </tr>
                      </thead>
                      <tbody className="divide-y divide-gray-100">
                        {filteredUsers.map(user => (
                          <tr key={user.id} className="hover:bg-gray-50 transition-colors group">
-                           <td className="px-6 py-4">
-                             <div className="flex items-center gap-3">
-                               <img src={user.avatar} className="w-8 h-8 rounded-full bg-gray-200" alt="" />
-                               <div>
-                                 <p className="font-bold text-sm text-gray-900">{user.name}</p>
-                                 <p className="text-xs text-gray-500">{user.email}</p>
+                           <td className="px-4 py-3">
+                             <div className="flex items-center gap-2">
+                               <img src={user.avatar} className="w-8 h-8 rounded-full bg-gray-200 flex-shrink-0" alt="" />
+                               <div className="min-w-0">
+                                 <p className="font-bold text-sm text-gray-900 truncate">{user.name}</p>
+                                 <p className="text-xs text-gray-500 truncate">{user.email}</p>
                                </div>
                              </div>
                            </td>
-                           <td className="px-6 py-4">
+                           <td className="px-4 py-3">
                              <Badge color={user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}>
                                {user.role}
                              </Badge>
                            </td>
-                           <td className="px-6 py-4 text-sm text-gray-600">{user.status || 'Active'}</td>
-                           <td className="px-6 py-4 text-right">
-                             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                               <button onClick={() => handleEdit(user)} className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100" title="Edit Profile"><Edit size={14}/></button>
+                           <td className="px-4 py-3 text-sm text-gray-600 hidden sm:table-cell">{user.status || 'Active'}</td>
+                           <td className="px-4 py-3 text-right">
+                             <div className="flex justify-end gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                               <button onClick={() => handleEdit(user)} className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100" title="Edit"><Edit size={14}/></button>
                                {user.id !== currentUser.id && (
-                                 <button onClick={() => setDeleteConfirm(user)} className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100" title="Delete User"><Trash2 size={14}/></button>
+                                 <button onClick={() => setDeleteConfirm(user)} className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100" title="Delete"><Trash2 size={14}/></button>
                                )}
                              </div>
                            </td>
@@ -259,16 +263,16 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
               </div>
 
               {/* LOGS PANEL */}
-              <div className="bg-gray-900 rounded-xl shadow-lg border border-gray-700 text-green-400 font-mono text-xs p-4 flex flex-col">
-                 <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-700">
+              <div className="bg-gray-900 rounded-xl shadow-lg border border-gray-700 text-green-400 font-mono text-xs p-4 flex flex-col" style={{maxHeight: 'calc(100vh - 280px)'}}>
+                 <div className="flex-shrink-0 flex items-center gap-2 mb-3 pb-2 border-b border-gray-700">
                    <Terminal size={16} />
-                   <span className="font-bold uppercase tracking-wider">System Terminal</span>
+                   <span className="font-bold uppercase tracking-wider text-xs">Terminal</span>
                  </div>
-                 <div className="flex-1 overflow-auto space-y-2 h-[400px]">
+                 <div className="flex-1 overflow-auto space-y-1">
                    {logs.slice().reverse().map((log, i) => (
-                     <div key={i} className="flex gap-2">
-                       <span className="text-gray-500">[{log.time}]</span>
-                       <span className={log.type === 'warning' ? 'text-yellow-400' : log.type === 'info' ? 'text-blue-400' : log.type === 'error' ? 'text-red-400' : 'text-green-400'}>
+                     <div key={i} className="flex gap-2 text-xs">
+                       <span className="text-gray-500 flex-shrink-0">[{log.time}]</span>
+                       <span className={`break-words ${log.type === 'warning' ? 'text-yellow-400' : log.type === 'info' ? 'text-blue-400' : log.type === 'error' ? 'text-red-400' : 'text-green-400'}`}>
                          {log.msg}
                        </span>
                      </div>
@@ -301,8 +305,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
         {/* EDIT/CREATE MODAL */}
         {showModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in slide-in-from-bottom-4">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm p-4 overflow-y-auto">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in slide-in-from-bottom-4 my-8">
               <div className="bg-purple-600 p-4 flex justify-between items-center text-white">
                 <h3 className="font-bold flex items-center gap-2">
                   {editingUser ? <Edit size={18}/> : <UserPlus size={18}/>}
@@ -516,11 +520,11 @@ const ClientDashboard = ({ user, onLogout }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6 font-sans flex flex-col">
-      <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col">
+    <div className="h-screen bg-gray-50 font-sans overflow-hidden flex flex-col">
+      <div className="flex flex-col h-full max-w-7xl mx-auto w-full p-4 md:p-6">
 
-        {/* NAV */}
-        <nav className="flex justify-between items-center mb-8 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+        {/* NAV - Fixed height */}
+        <nav className="flex-shrink-0 flex justify-between items-center mb-4 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
           <div className="flex items-center gap-3">
             <div className="bg-green-100 p-2 rounded-lg"><Briefcase className="text-green-600" /></div>
             <div>
@@ -533,13 +537,14 @@ const ClientDashboard = ({ user, onLogout }) => {
 
         {/* --- STEP 1: UPLOAD --- */}
         {step === 'upload' && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 flex-1 flex flex-col justify-center">
-             <div className="text-center mb-10">
-                <h2 className="text-3xl font-bold text-gray-800 mb-2">Upload Files</h2>
-                <p className="text-gray-500">Please upload your Excel manifest and PDF.</p>
-             </div>
+          <div className="flex-1 overflow-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+             <div className="min-h-full flex flex-col justify-center py-8">
+               <div className="text-center mb-10">
+                  <h2 className="text-3xl font-bold text-gray-800 mb-2">Upload Files</h2>
+                  <p className="text-gray-500">Please upload your Excel manifest and PDF.</p>
+               </div>
 
-             <div className="grid md:grid-cols-2 gap-8 mb-10 max-w-4xl mx-auto w-full">
+               <div className="grid md:grid-cols-2 gap-8 mb-10 max-w-4xl mx-auto w-full">
                 {/* Excel Card */}
                 <div onClick={() => !excelFile && handleFileSelect('excel')} className={`relative p-10 rounded-2xl border-2 border-dashed transition-all group flex flex-col items-center ${excelFile ? 'bg-green-50 border-green-500' : 'bg-white border-gray-300 cursor-pointer hover:border-green-400 hover:shadow-lg'}`}>
                   {excelFile && <button onClick={(e) => removeFile(e, 'excel')} className="absolute top-4 right-4 text-green-700 hover:bg-green-200 p-1 rounded-full"><X size={20}/></button>}
@@ -559,23 +564,25 @@ const ClientDashboard = ({ user, onLogout }) => {
                   <h3 className="font-bold text-xl text-gray-700">{pdfFile ? "PDF Loaded" : "Upload Master PDF"}</h3>
                   <p className="text-sm text-gray-500 mt-2 font-medium">{pdfFile ? pdfFile.name : "Click to Select"}</p>
                 </div>
-             </div>
+               </div>
 
-             <div className="flex justify-center">
-               <button disabled={!excelFile || isProcessing} onClick={goToSelection} className={`flex items-center gap-3 px-10 py-4 rounded-xl font-bold text-lg shadow-xl transition-all ${(!excelFile || isProcessing) ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 hover:scale-105 active:scale-95'}`}>
-                 {isProcessing ? <><Loader className="animate-spin" /> Crunching Numbers...</> : <><UploadCloud /> Process Files</>}
-               </button>
+               <div className="flex justify-center">
+                 <button disabled={!excelFile || isProcessing} onClick={goToSelection} className={`flex items-center gap-3 px-10 py-4 rounded-xl font-bold text-lg shadow-xl transition-all ${(!excelFile || isProcessing) ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 hover:scale-105 active:scale-95'}`}>
+                   {isProcessing ? <><Loader className="animate-spin" /> Crunching Numbers...</> : <><UploadCloud /> Process Files</>}
+                 </button>
+               </div>
              </div>
           </div>
         )}
 
         {/* --- STEP 2: SELECTION & CONFIG --- */}
         {step === 'select' && (
-          <div className="animate-in fade-in duration-500 grid lg:grid-cols-4 gap-8 flex-1">
+          <div className="flex-1 overflow-auto animate-in fade-in duration-500">
+            <div className="grid lg:grid-cols-4 gap-6 h-full">
 
              {/* SIDEBAR CONFIG */}
-             <div className="lg:col-span-1 space-y-6">
-                <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200 sticky top-6">
+             <div className="lg:col-span-1 space-y-4">
+                <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
                    <div className="flex items-center justify-between gap-2 mb-6 pb-4 border-b border-gray-100">
                       <div className="flex items-center gap-2">
                         <Settings className="text-purple-600" />
@@ -633,8 +640,8 @@ const ClientDashboard = ({ user, onLogout }) => {
              </div>
 
              {/* MAIN TABLE */}
-             <div className="lg:col-span-3 flex flex-col h-full">
-                <div className="bg-white rounded-xl shadow-xl border border-gray-200 flex flex-col overflow-hidden flex-1">
+             <div className="lg:col-span-3 flex flex-col" style={{maxHeight: 'calc(100vh - 180px)'}}>
+                <div className="bg-white rounded-xl shadow-xl border border-gray-200 flex flex-col overflow-hidden h-full">
                    <div className="p-5 border-b border-gray-200 flex flex-wrap gap-4 justify-between items-center bg-gray-50">
                       <div className="flex items-center gap-2">
                          <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-bold">{selectedRows.size} Selected</span>
@@ -656,15 +663,15 @@ const ClientDashboard = ({ user, onLogout }) => {
                       <table className="w-full text-left border-collapse">
                          <thead className="bg-gray-100 sticky top-0 z-10 shadow-sm">
                             <tr>
-                               <th className="p-4 w-16 text-center border-b border-gray-200">
+                               <th className="p-3 md:p-4 w-12 md:w-16 text-center border-b border-gray-200">
                                   <button onClick={toggleAll} className="text-gray-500 hover:text-blue-600 transition-colors">
-                                     {selectedRows.size === filteredData.length && filteredData.length > 0 ? <CheckSquare size={20}/> : <Square size={20}/>}
+                                     {selectedRows.size === filteredData.length && filteredData.length > 0 ? <CheckSquare size={18}/> : <Square size={18}/>}
                                   </button>
                                </th>
-                               <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">Date</th>
-                               <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">Document Type</th>
-                               <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">Page Range</th>
-                               <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">Note</th>
+                               <th className="p-3 md:p-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">Date</th>
+                               <th className="p-3 md:p-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">Document Type</th>
+                               <th className="p-3 md:p-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 hidden sm:table-cell">Page Range</th>
+                               <th className="p-3 md:p-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 hidden md:table-cell">Note</th>
                             </tr>
                          </thead>
                          <tbody className="divide-y divide-gray-100">
@@ -672,15 +679,15 @@ const ClientDashboard = ({ user, onLogout }) => {
                                const isSelected = selectedRows.has(row.id);
                                return (
                                   <tr key={row.id} onClick={()=>toggleRow(row.id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-gray-50'}`}>
-                                     <td className="p-4 text-center">
+                                     <td className="p-3 md:p-4 text-center">
                                         <div className={isSelected ? 'text-blue-600' : 'text-gray-300 group-hover:text-gray-400'}>
-                                           {isSelected ? <CheckSquare size={20}/> : <Square size={20}/>}
+                                           {isSelected ? <CheckSquare size={18}/> : <Square size={18}/>}
                                         </div>
                                      </td>
-                                     <td className="p-4 text-sm font-mono text-gray-600">{row.date}</td>
-                                     <td className="p-4 text-sm font-bold text-gray-800">{row.docType}</td>
-                                     <td className="p-4"><span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-mono border border-gray-200">{row.pages} ({row.pageCount}p)</span></td>
-                                     <td className="p-4 text-sm text-gray-500 italic truncate max-w-[150px]">{row.note}</td>
+                                     <td className="p-3 md:p-4 text-xs md:text-sm font-mono text-gray-600">{row.date}</td>
+                                     <td className="p-3 md:p-4 text-xs md:text-sm font-bold text-gray-800 truncate max-w-[200px]">{row.docType}</td>
+                                     <td className="p-3 md:p-4 hidden sm:table-cell"><span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-mono border border-gray-200">{row.pages} ({row.pageCount}p)</span></td>
+                                     <td className="p-3 md:p-4 text-xs md:text-sm text-gray-500 italic truncate max-w-[150px] hidden md:table-cell">{row.note}</td>
                                   </tr>
                                );
                             })}
@@ -692,13 +699,15 @@ const ClientDashboard = ({ user, onLogout }) => {
                    </div>
                 </div>
              </div>
+            </div>
           </div>
         )}
 
         {/* --- STEP 3: RESULT --- */}
         {step === 'result' && (
-          <div className="flex-1 flex items-center justify-center animate-in zoom-in duration-300">
-             <div className="bg-white rounded-2xl shadow-2xl border border-green-100 overflow-hidden max-w-4xl w-full">
+          <div className="flex-1 overflow-auto animate-in zoom-in duration-300">
+             <div className="min-h-full flex items-center justify-center py-8">
+               <div className="bg-white rounded-2xl shadow-2xl border border-green-100 overflow-hidden max-w-4xl w-full">
 
                 <div className="bg-green-600 p-8 text-white text-center relative overflow-hidden">
                    <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
@@ -790,14 +799,15 @@ const ClientDashboard = ({ user, onLogout }) => {
 
                    </div>
                 </div>
+               </div>
              </div>
           </div>
         )}
 
         {/* PROGRESS MODAL */}
         {processingProgress.show && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in">
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in my-8">
               <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3 text-white">

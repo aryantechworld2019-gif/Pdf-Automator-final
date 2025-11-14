@@ -11,6 +11,7 @@ const store = new Store();
 let mainWindow;
 const isDev = process.env.NODE_ENV === 'development';
 const tempFiles = new Set(); // Track temp files for cleanup
+const processingJobs = new Map(); // Track ongoing processing jobs for cancellation
 
 // Initialize default users if not exists
 if (!store.get('users')) {
@@ -461,8 +462,10 @@ function calculatePageCount(pageRange) {
   }
 }
 
-// === PDF PROCESSING ===
+// === PDF PROCESSING WITH PROGRESS ===
 ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig, isBatesEnabled }) => {
+  const jobId = Date.now().toString();
+
   try {
     // Validate inputs
     if (!isValidFilePath(pdfPath)) {
@@ -475,12 +478,19 @@ ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig
 
     // Check file exists and size
     const stats = await fs.stat(pdfPath);
-    const maxSize = 200 * 1024 * 1024; // 200MB limit for PDFs
+    const maxSize = 2000 * 1024 * 1024; // Increased to 2GB for large scanned PDFs
     if (stats.size > maxSize) {
       throw new Error(`PDF too large. Maximum size is ${maxSize / 1024 / 1024}MB`);
     }
 
-    addLog(`Processing PDF with ${selectedRows.length} selected documents`, 'info');
+    const fileSizeMB = (stats.size / 1024 / 1024).toFixed(2);
+    addLog(`Processing PDF (${fileSizeMB}MB) with ${selectedRows.length} selected documents`, 'info');
+
+    // Track this job for cancellation
+    processingJobs.set(jobId, { cancelled: false });
+
+    // Send initial progress
+    sendProgress(event, { stage: 'loading', progress: 0, message: 'Loading PDF...' });
 
     // Read the source PDF
     const pdfBytes = await fs.readFile(pdfPath);
@@ -490,6 +500,9 @@ ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig
     if (totalPages === 0) {
       throw new Error('PDF has no pages');
     }
+
+    addLog(`PDF loaded: ${totalPages} pages total`, 'info');
+    sendProgress(event, { stage: 'analyzing', progress: 10, message: `Analyzing ${totalPages} pages...` });
 
     // Create output PDF
     const outputPdf = await PDFDocument.create();
@@ -506,7 +519,27 @@ ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig
     let currentBatesNumber = batesStart || 1;
     const processedData = [];
 
+    // Calculate total pages to process for progress
+    let totalPagesToProcess = 0;
     for (const row of sortedRows) {
+      const pageRange = parsePageRange(row.pages, totalPages);
+      totalPagesToProcess += pageRange.length;
+    }
+
+    addLog(`Will process ${totalPagesToProcess} pages from ${sortedRows.length} documents`, 'info');
+    sendProgress(event, { stage: 'processing', progress: 15, message: `Processing ${totalPagesToProcess} pages...` });
+
+    let processedPages = 0;
+    const BATCH_SIZE = 50; // Process 50 pages at a time for memory efficiency
+    let currentBatch = [];
+
+    for (let i = 0; i < sortedRows.length; i++) {
+      // Check if cancelled
+      if (processingJobs.get(jobId)?.cancelled) {
+        throw new Error('Processing cancelled by user');
+      }
+
+      const row = sortedRows[i];
       const pageRange = parsePageRange(row.pages, totalPages);
       const startBates = currentBatesNumber;
 
@@ -517,15 +550,41 @@ ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig
 
       for (const pageNum of pageRange) {
         if (pageNum > 0 && pageNum <= totalPages) {
-          const [copiedPage] = await outputPdf.copyPages(pdfDoc, [pageNum - 1]);
-
-          // Apply Bates stamping if enabled
-          if (isBatesEnabled) {
-            await applyBatesStamp(copiedPage, currentBatesNumber, batesConfig);
-          }
-
-          outputPdf.addPage(copiedPage);
+          currentBatch.push({ pageNum, batesNum: currentBatesNumber, isBatesEnabled });
           currentBatesNumber++;
+
+          // Process batch when it reaches BATCH_SIZE or is the last page
+          if (currentBatch.length >= BATCH_SIZE || (i === sortedRows.length - 1 && pageNum === pageRange[pageRange.length - 1])) {
+            // Copy pages in batch
+            const pageIndices = currentBatch.map(p => p.pageNum - 1);
+            const copiedPages = await outputPdf.copyPages(pdfDoc, pageIndices);
+
+            // Apply Bates stamps and add pages
+            for (let j = 0; j < copiedPages.length; j++) {
+              const copiedPage = copiedPages[j];
+
+              if (currentBatch[j].isBatesEnabled) {
+                await applyBatesStamp(copiedPage, currentBatch[j].batesNum, batesConfig);
+              }
+
+              outputPdf.addPage(copiedPage);
+              processedPages++;
+
+              // Update progress every 10 pages
+              if (processedPages % 10 === 0 || processedPages === totalPagesToProcess) {
+                const progress = 15 + Math.floor((processedPages / totalPagesToProcess) * 70);
+                sendProgress(event, {
+                  stage: 'processing',
+                  progress,
+                  message: `Processing page ${processedPages} of ${totalPagesToProcess}...`,
+                  current: processedPages,
+                  total: totalPagesToProcess
+                });
+              }
+            }
+
+            currentBatch = [];
+          }
         }
       }
 
@@ -541,6 +600,8 @@ ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig
       throw new Error('No pages were added to output PDF. Check your page ranges.');
     }
 
+    sendProgress(event, { stage: 'saving', progress: 85, message: 'Saving PDF...' });
+
     const processedPdfBytes = await outputPdf.save();
 
     // Save to temp directory with unique name
@@ -552,19 +613,44 @@ ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig
     // Track temp file for cleanup
     tempFiles.add(outputPath);
 
-    addLog(`PDF processing complete. ${outputPdf.getPageCount()} pages in output.`, 'success');
+    const outputSizeMB = (processedPdfBytes.length / 1024 / 1024).toFixed(2);
+    addLog(`PDF processing complete. ${outputPdf.getPageCount()} pages in output (${outputSizeMB}MB).`, 'success');
+
+    sendProgress(event, { stage: 'complete', progress: 100, message: 'Processing complete!' });
+
+    // Clean up job tracking
+    processingJobs.delete(jobId);
 
     return {
       success: true,
       outputPath,
       processedData,
-      pageCount: outputPdf.getPageCount()
+      pageCount: outputPdf.getPageCount(),
+      fileSize: outputSizeMB
     };
   } catch (error) {
     addLog(`Error processing PDF: ${error.message}`, 'error');
+    processingJobs.delete(jobId);
     return { success: false, error: error.message };
   }
 });
+
+// Cancel PDF processing
+ipcMain.handle('pdf:cancel', async (event, jobId) => {
+  if (processingJobs.has(jobId)) {
+    processingJobs.get(jobId).cancelled = true;
+    addLog('PDF processing cancelled by user', 'warning');
+    return { success: true };
+  }
+  return { success: false, error: 'Job not found' };
+});
+
+// Helper to send progress updates
+function sendProgress(event, progressData) {
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send('pdf:progress', progressData);
+  }
+}
 
 async function applyBatesStamp(page, batesNumber, config) {
   const { width, height } = page.getSize();

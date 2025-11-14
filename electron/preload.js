@@ -26,5 +26,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // PDF Processing
   processPDF: (config) => ipcRenderer.invoke('pdf:process', config),
+  cancelPDF: (jobId) => ipcRenderer.invoke('pdf:cancel', jobId),
+  onPDFProgress: (callback) => {
+    const listener = (event, progress) => callback(progress);
+    ipcRenderer.on('pdf:progress', listener);
+    // Return cleanup function
+    return () => ipcRenderer.removeListener('pdf:progress', listener);
+  },
   exportPDF: (config) => ipcRenderer.invoke('pdf:export', config),
 });

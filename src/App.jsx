@@ -369,6 +369,16 @@ const ClientDashboard = ({ user, onLogout }) => {
 
   const [processedPdfPath, setProcessedPdfPath] = useState(null);
 
+  // Progress tracking
+  const [processingProgress, setProcessingProgress] = useState({
+    show: false,
+    stage: '',
+    progress: 0,
+    message: '',
+    current: 0,
+    total: 0
+  });
+
   const formatBates = (num, digits) => num.toString().padStart(digits, '0');
 
   const handleFileSelect = async (type) => {
@@ -431,24 +441,46 @@ const ClientDashboard = ({ user, onLogout }) => {
     }
 
     setIsProcessing(true);
-
-    const selectedItems = tableData.filter(row => selectedRows.has(row.id));
-
-    const result = await window.electronAPI.processPDF({
-      pdfPath: pdfFile.path,
-      selectedRows: selectedItems,
-      batesConfig,
-      isBatesEnabled
+    setProcessingProgress({
+      show: true,
+      stage: 'starting',
+      progress: 0,
+      message: 'Starting PDF processing...',
+      current: 0,
+      total: 0
     });
 
-    setIsProcessing(false);
+    // Listen for progress updates
+    const cleanup = window.electronAPI.onPDFProgress((progress) => {
+      setProcessingProgress({
+        show: true,
+        ...progress
+      });
+    });
 
-    if (result.success) {
-      setSortedData(result.processedData);
-      setProcessedPdfPath(result.outputPath);
-      setStep('result');
-    } else {
-      alert('Error processing PDF: ' + result.error);
+    try {
+      const selectedItems = tableData.filter(row => selectedRows.has(row.id));
+
+      const result = await window.electronAPI.processPDF({
+        pdfPath: pdfFile.path,
+        selectedRows: selectedItems,
+        batesConfig,
+        isBatesEnabled
+      });
+
+      if (result.success) {
+        setSortedData(result.processedData);
+        setProcessedPdfPath(result.outputPath);
+        setStep('result');
+      } else {
+        alert('Error processing PDF: ' + result.error);
+      }
+    } catch (error) {
+      alert('Error: ' + error.message);
+    } finally {
+      setIsProcessing(false);
+      setProcessingProgress({ show: false, stage: '', progress: 0, message: '', current: 0, total: 0 });
+      cleanup(); // Clean up progress listener
     }
   };
 
@@ -759,6 +791,81 @@ const ClientDashboard = ({ user, onLogout }) => {
                    </div>
                 </div>
              </div>
+          </div>
+        )}
+
+        {/* PROGRESS MODAL */}
+        {processingProgress.show && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in">
+              <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 text-white">
+                    <Loader className="animate-spin" size={24} />
+                    <h3 className="font-bold text-xl">Processing PDF...</h3>
+                  </div>
+                  <div className="text-white text-2xl font-bold">{processingProgress.progress}%</div>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-4">
+                {/* Progress Bar */}
+                <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden shadow-inner">
+                  <div
+                    className="bg-gradient-to-r from-blue-500 to-purple-500 h-full rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${processingProgress.progress}%` }}
+                  />
+                </div>
+
+                {/* Status Message */}
+                <div className="text-center">
+                  <div className="text-sm font-bold text-gray-700 mb-1">
+                    {processingProgress.stage === 'loading' && '📂 Loading PDF...'}
+                    {processingProgress.stage === 'analyzing' && '🔍 Analyzing Structure...'}
+                    {processingProgress.stage === 'processing' && '⚙️ Processing Pages...'}
+                    {processingProgress.stage === 'saving' && '💾 Saving Output...'}
+                    {processingProgress.stage === 'complete' && '✅ Complete!'}
+                  </div>
+                  <div className="text-xs text-gray-500">{processingProgress.message}</div>
+                </div>
+
+                {/* Page Counter (if available) */}
+                {processingProgress.total > 0 && (
+                  <div className="flex justify-center items-center gap-2 text-sm">
+                    <div className="bg-blue-100 px-3 py-1 rounded-full text-blue-700 font-mono font-bold">
+                      {processingProgress.current} / {processingProgress.total}
+                    </div>
+                    <span className="text-gray-400">pages</span>
+                  </div>
+                )}
+
+                {/* Processing Tips */}
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                  <div className="flex items-start gap-2">
+                    <div className="text-blue-500 mt-0.5">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="text-xs text-blue-700 flex-1">
+                      <div className="font-bold mb-1">Processing large PDF...</div>
+                      <div className="text-blue-600">
+                        • This may take several minutes for PDFs with thousands of pages<br/>
+                        • The app is working in the background - please be patient<br/>
+                        • Do not close the application during processing
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Estimated Time (for long operations) */}
+                {processingProgress.total > 1000 && (
+                  <div className="text-center text-xs text-gray-400">
+                    Large file detected - estimated time: {Math.ceil(processingProgress.total / 100)} minutes
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

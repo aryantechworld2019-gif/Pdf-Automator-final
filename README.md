@@ -6,11 +6,15 @@ A fully dynamic Electron + React application for automating PDF processing with 
 
 - 🔐 **User Authentication** - Secure login with admin and client roles
 - 👥 **User Management** - Admin dashboard for managing users
-- 📊 **Excel Parsing** - Automatically parse Excel manifests
+- 📊 **Excel Parsing** - Automatically parse Excel manifests (flexible column detection)
 - 📄 **PDF Processing** - Extract and reorder PDF pages based on manifest
-- 🔢 **Bates Stamping** - Optional automatic Bates number stamping
+- 🔢 **Bates Stamping** - Optional automatic Bates number stamping (toggle on/off)
 - 📦 **Export Options** - Export as master PDF or zipped separates
 - 📝 **Activity Logging** - Real-time system logging
+- 🚀 **Large PDF Support** - Handle PDFs up to 2GB with 5000+ pages
+- ⚡ **Progress Tracking** - Real-time progress bar with page counter
+- 💪 **Memory Efficient** - Chunked processing prevents memory overflow
+- 🔍 **Smart Column Detection** - Auto-detects Excel columns by header keywords
 
 ## Tech Stack
 

@@ -14,6 +14,133 @@ const Badge = ({ children, color }) => (
   </span>
 );
 
+// --- DATE FORMAT SETTINGS MODAL ---
+const DateFormatSettings = ({ isOpen, onClose }) => {
+  const [dateFormat, setDateFormat] = useState('DD-MM-YYYY');
+  const [isLoading, setIsLoading] = useState(true);
+
+  const dateFormats = [
+    { value: 'DD-MM-YYYY', label: 'DD-MM-YYYY', example: '07-11-2024' },
+    { value: 'MM-DD-YYYY', label: 'MM-DD-YYYY', example: '11-07-2024' },
+    { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD', example: '2024-11-07' },
+    { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY', example: '07/11/2024' },
+    { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY', example: '11/07/2024' },
+    { value: 'YYYY/MM/DD', label: 'YYYY/MM/DD', example: '2024/11/07' },
+  ];
+
+  useEffect(() => {
+    if (isOpen) {
+      loadDateFormat();
+    }
+  }, [isOpen]);
+
+  const loadDateFormat = async () => {
+    setIsLoading(true);
+    const format = await window.electronAPI.getDateFormat();
+    setDateFormat(format);
+    setIsLoading(false);
+  };
+
+  const handleSave = async () => {
+    const result = await window.electronAPI.setDateFormat(dateFormat);
+    if (result.success) {
+      alert('Date format saved successfully! This will apply to all future Excel imports.');
+      onClose();
+    } else {
+      alert('Error saving date format: ' + result.error);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm p-4 overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in slide-in-from-bottom-4 my-8">
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-4 flex justify-between items-center text-white">
+          <h3 className="font-bold flex items-center gap-2">
+            <Calendar size={20}/>
+            Date Format Settings
+          </h3>
+          <button onClick={onClose} className="hover:bg-white/20 p-1 rounded"><X size={20}/></button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {isLoading ? (
+            <div className="text-center py-8">
+              <Loader className="animate-spin mx-auto mb-2 text-blue-600" size={32}/>
+              <p className="text-gray-500">Loading settings...</p>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-3">
+                  Choose your preferred date format:
+                </label>
+                <div className="space-y-2">
+                  {dateFormats.map((format) => (
+                    <label
+                      key={format.value}
+                      className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                        dateFormat === format.value
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="dateFormat"
+                          value={format.value}
+                          checked={dateFormat === format.value}
+                          onChange={(e) => setDateFormat(e.target.value)}
+                          className="w-4 h-4 text-blue-600"
+                        />
+                        <div>
+                          <div className="font-bold text-gray-900">{format.label}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">Example: {format.example}</div>
+                        </div>
+                      </div>
+                      {dateFormat === format.value && (
+                        <CheckCircle className="text-blue-600" size={20}/>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="text-blue-600 flex-shrink-0 mt-0.5" size={18}/>
+                  <div className="text-xs text-blue-700">
+                    <div className="font-bold mb-1">Note:</div>
+                    <div>This setting will apply to all future Excel file imports. Dates in Excel will be formatted according to your selection.</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-gray-200">
+                <button
+                  onClick={onClose}
+                  className="flex-1 py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold rounded-lg shadow-lg transition-all flex items-center justify-center gap-2"
+                >
+                  <Save size={18}/>
+                  Save Format
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- LOGIN COMPONENT ---
 const LoginForm = ({ onLogin, error }) => {
   const [username, setUsername] = useState('');
@@ -77,6 +204,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [showDateSettings, setShowDateSettings] = useState(false);
 
   useEffect(() => {
     loadUsers();
@@ -174,7 +302,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                <p className="text-xs text-gray-500">Super Admin</p>
              </div>
              <img src={currentUser.avatar} className="w-10 h-10 rounded-full border-2 border-purple-500" alt="Profile" />
-             <button onClick={onLogout} className="text-gray-500 hover:text-red-500"><LogOut size={20} /></button>
+             <button onClick={() => setShowDateSettings(true)} className="text-gray-500 hover:text-blue-500 transition-colors" title="Date Format Settings"><Calendar size={20} /></button>
+             <button onClick={onLogout} className="text-gray-500 hover:text-red-500 transition-colors" title="Logout"><LogOut size={20} /></button>
            </div>
         </header>
 
@@ -350,6 +479,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           </div>
         )}
 
+        {/* DATE FORMAT SETTINGS MODAL */}
+        <DateFormatSettings isOpen={showDateSettings} onClose={() => setShowDateSettings(false)} />
+
       </main>
     </div>
   );
@@ -373,6 +505,7 @@ const ClientDashboard = ({ user, onLogout }) => {
 
   const [processedPdfPath, setProcessedPdfPath] = useState(null);
   const [processingResult, setProcessingResult] = useState(null);
+  const [showDateSettings, setShowDateSettings] = useState(false);
 
   // Progress tracking
   const [processingProgress, setProcessingProgress] = useState({
@@ -539,7 +672,10 @@ const ClientDashboard = ({ user, onLogout }) => {
                <p className="text-xs text-gray-500">Operated by: {user.username}</p>
             </div>
           </div>
-          <button onClick={onLogout} className="flex items-center gap-2 text-gray-500 hover:text-red-500 font-medium transition-colors"><LogOut size={18} /> Logout</button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setShowDateSettings(true)} className="text-gray-500 hover:text-blue-500 transition-colors" title="Date Format Settings"><Calendar size={20} /></button>
+            <button onClick={onLogout} className="flex items-center gap-2 text-gray-500 hover:text-red-500 font-medium transition-colors"><LogOut size={18} /> <span className="hidden sm:inline">Logout</span></button>
+          </div>
         </nav>
 
         {/* --- STEP 1: UPLOAD --- */}
@@ -885,6 +1021,9 @@ const ClientDashboard = ({ user, onLogout }) => {
             </div>
           </div>
         )}
+
+        {/* DATE FORMAT SETTINGS MODAL */}
+        <DateFormatSettings isOpen={showDateSettings} onClose={() => setShowDateSettings(false)} />
 
       </div>
     </div>

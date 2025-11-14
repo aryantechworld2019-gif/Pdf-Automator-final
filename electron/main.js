@@ -57,6 +57,11 @@ if (!store.get('logs')) {
   ]);
 }
 
+// Initialize date format preference (default: DD-MM-YYYY)
+if (!store.get('dateFormat')) {
+  store.set('dateFormat', 'DD-MM-YYYY');
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -281,6 +286,21 @@ ipcMain.handle('logs:add', async (event, { msg, type = 'info' }) => {
   return true;
 });
 
+// === DATE FORMAT SETTINGS ===
+ipcMain.handle('dateFormat:get', async () => {
+  return store.get('dateFormat', 'DD-MM-YYYY');
+});
+
+ipcMain.handle('dateFormat:set', async (event, format) => {
+  const validFormats = ['DD-MM-YYYY', 'MM-DD-YYYY', 'YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY/MM/DD'];
+  if (validFormats.includes(format)) {
+    store.set('dateFormat', format);
+    addLog(`Date format changed to: ${format}`, 'info');
+    return { success: true };
+  }
+  return { success: false, error: 'Invalid date format' };
+});
+
 function addLog(msg, type = 'info') {
   const logs = store.get('logs', []);
   const newLog = {
@@ -337,12 +357,37 @@ ipcMain.handle('file:selectPDF', async () => {
 
 // === EXCEL PARSING ===
 
+// Helper function to format date based on user preference
+function formatDateString(day, month, year) {
+  const format = store.get('dateFormat', 'DD-MM-YYYY');
+  const d = String(day).padStart(2, '0');
+  const m = String(month).padStart(2, '0');
+  const y = String(year);
+
+  switch (format) {
+    case 'DD-MM-YYYY':
+      return `${d}-${m}-${y}`;
+    case 'MM-DD-YYYY':
+      return `${m}-${d}-${y}`;
+    case 'YYYY-MM-DD':
+      return `${y}-${m}-${d}`;
+    case 'DD/MM/YYYY':
+      return `${d}/${m}/${y}`;
+    case 'MM/DD/YYYY':
+      return `${m}/${d}/${y}`;
+    case 'YYYY/MM/DD':
+      return `${y}/${m}/${d}`;
+    default:
+      return `${d}-${m}-${y}`;
+  }
+}
+
 // Helper function to convert Excel date formats
 function formatExcelDate(value, worksheet, cellAddress) {
   // If value is undefined or null, return current date
   if (value === undefined || value === null || value === '') {
     const today = new Date();
-    return `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
+    return formatDateString(today.getDate(), today.getMonth() + 1, today.getFullYear());
   }
 
   // If it's already a string that looks like a date, return it
@@ -376,11 +421,7 @@ function formatExcelDate(value, worksheet, cellAddress) {
         // XLSX.SSF.parse_date_code returns {y, m, d, H, M, S}
         const dateObj = XLSX.SSF.parse_date_code(numValue);
         if (dateObj) {
-          const day = String(dateObj.d).padStart(2, '0');
-          const month = String(dateObj.m).padStart(2, '0');
-          const year = dateObj.y;
-
-          return `${day}-${month}-${year}`;
+          return formatDateString(dateObj.d, dateObj.m, dateObj.y);
         }
 
         // Fallback: manual conversion if XLSX utility fails
@@ -390,12 +431,8 @@ function formatExcelDate(value, worksheet, cellAddress) {
         const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Dec 30, 1899 UTC
         const jsDate = new Date(excelEpoch.getTime() + (numValue * MS_PER_DAY));
 
-        // Format as DD-MM-YYYY using UTC to avoid timezone issues
-        const day = String(jsDate.getUTCDate()).padStart(2, '0');
-        const month = String(jsDate.getUTCMonth() + 1).padStart(2, '0');
-        const year = jsDate.getUTCFullYear();
-
-        return `${day}-${month}-${year}`;
+        // Format using user preference
+        return formatDateString(jsDate.getUTCDate(), jsDate.getUTCMonth() + 1, jsDate.getUTCFullYear());
       } catch (error) {
         console.error('Error converting Excel date:', error);
         return String(value);

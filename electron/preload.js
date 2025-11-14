@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   addLog: (logData) => ipcRenderer.invoke('logs:add', logData),
   onLogsUpdated: (callback) => ipcRenderer.on('logs:updated', (event, logs) => callback(logs)),
 
+  // Date Format Settings
+  getDateFormat: () => ipcRenderer.invoke('dateFormat:get'),
+  setDateFormat: (format) => ipcRenderer.invoke('dateFormat:set', format),
+
   // File Selection
   selectExcelFile: () => ipcRenderer.invoke('file:selectExcel'),
   selectPDFFile: () => ipcRenderer.invoke('file:selectPDF'),

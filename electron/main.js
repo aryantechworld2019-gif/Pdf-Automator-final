@@ -338,7 +338,7 @@ ipcMain.handle('file:selectPDF', async () => {
 // === EXCEL PARSING ===
 
 // Helper function to convert Excel date formats
-function formatExcelDate(value) {
+function formatExcelDate(value, worksheet, cellAddress) {
   // If value is undefined or null, return current date
   if (value === undefined || value === null || value === '') {
     const today = new Date();
@@ -356,19 +356,44 @@ function formatExcelDate(value) {
   // Check if it's a number (Excel date format)
   const numValue = Number(value);
   if (!isNaN(numValue) && numValue > 0) {
-    // Excel dates are typically between 1 (Jan 1, 1900) and ~50000 (year 2036)
-    // This handles Excel's serial date format
+    // Excel dates are typically between 1 (Jan 1, 1900) and ~100000
     if (numValue > 1 && numValue < 100000) {
       try {
-        // Convert Excel date serial number to JavaScript Date
-        // Excel dates start from January 1, 1900 (with a bug for 1900 being a leap year)
-        const excelEpoch = new Date(1899, 11, 30); // December 30, 1899
-        const jsDate = new Date(excelEpoch.getTime() + numValue * 24 * 60 * 60 * 1000);
+        // Check if cell has date formatting (if worksheet and cellAddress provided)
+        if (worksheet && cellAddress) {
+          const cell = worksheet[cellAddress];
+          if (cell && cell.t === 'n' && cell.w) {
+            // Cell is numeric with formatted display - likely a date
+            // Try to parse the formatted value
+            const formatted = cell.w;
+            if (formatted.includes('/') || formatted.includes('-')) {
+              return formatted;
+            }
+          }
+        }
 
-        // Format as DD-MM-YYYY
-        const day = String(jsDate.getDate()).padStart(2, '0');
-        const month = String(jsDate.getMonth() + 1).padStart(2, '0');
-        const year = jsDate.getFullYear();
+        // Use XLSX's built-in date conversion
+        // XLSX.SSF.parse_date_code returns {y, m, d, H, M, S}
+        const dateObj = XLSX.SSF.parse_date_code(numValue);
+        if (dateObj) {
+          const day = String(dateObj.d).padStart(2, '0');
+          const month = String(dateObj.m).padStart(2, '0');
+          const year = dateObj.y;
+
+          return `${day}-${month}-${year}`;
+        }
+
+        // Fallback: manual conversion if XLSX utility fails
+        // Excel epoch is December 30, 1899 (serial day 0)
+        // Create date by adding days
+        const MS_PER_DAY = 24 * 60 * 60 * 1000;
+        const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Dec 30, 1899 UTC
+        const jsDate = new Date(excelEpoch.getTime() + (numValue * MS_PER_DAY));
+
+        // Format as DD-MM-YYYY using UTC to avoid timezone issues
+        const day = String(jsDate.getUTCDate()).padStart(2, '0');
+        const month = String(jsDate.getUTCMonth() + 1).padStart(2, '0');
+        const year = jsDate.getUTCFullYear();
 
         return `${day}-${month}-${year}`;
       } catch (error) {
@@ -436,7 +461,9 @@ ipcMain.handle('excel:parse', async (event, filePath) => {
     const transformedData = data.map((row, index) => {
       // First column is ALWAYS the date - format it properly
       const rawDateValue = row[firstColName];
-      const dateValue = formatExcelDate(rawDateValue);
+      // Calculate cell address (A2, A3, etc. - row index + 2 because of header row)
+      const cellAddress = `A${index + 2}`;
+      const dateValue = formatExcelDate(rawDateValue, worksheet, cellAddress);
 
       // Get other columns by detected indices
       const docTypeValue = docTypeCol >= 0 ? row[headers[docTypeCol]] : null;

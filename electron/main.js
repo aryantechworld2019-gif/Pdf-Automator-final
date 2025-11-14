@@ -574,6 +574,67 @@ function calculatePageCount(pageRange) {
   }
 }
 
+// Helper function to parse date string based on format
+function parseDateStringToDate(dateString, format) {
+  if (!dateString) return new Date();
+
+  const dateStr = String(dateString).trim();
+  const currentFormat = format || store.get('dateFormat', 'DD-MM-YYYY');
+
+  // Extract separator (- or /)
+  const separator = dateStr.includes('/') ? '/' : '-';
+  const parts = dateStr.split(separator);
+
+  if (parts.length !== 3) {
+    // Fallback: try to parse as-is
+    const fallback = new Date(dateStr);
+    return isNaN(fallback) ? new Date() : fallback;
+  }
+
+  let day, month, year;
+
+  switch (currentFormat) {
+    case 'DD-MM-YYYY':
+    case 'DD/MM/YYYY':
+      // parts = [DD, MM, YYYY]
+      day = parseInt(parts[0]);
+      month = parseInt(parts[1]) - 1; // JavaScript months are 0-indexed
+      year = parseInt(parts[2]);
+      break;
+
+    case 'MM-DD-YYYY':
+    case 'MM/DD/YYYY':
+      // parts = [MM, DD, YYYY]
+      month = parseInt(parts[0]) - 1;
+      day = parseInt(parts[1]);
+      year = parseInt(parts[2]);
+      break;
+
+    case 'YYYY-MM-DD':
+    case 'YYYY/MM/DD':
+      // parts = [YYYY, MM, DD]
+      year = parseInt(parts[0]);
+      month = parseInt(parts[1]) - 1;
+      day = parseInt(parts[2]);
+      break;
+
+    default:
+      // Fallback to DD-MM-YYYY
+      day = parseInt(parts[0]);
+      month = parseInt(parts[1]) - 1;
+      year = parseInt(parts[2]);
+  }
+
+  // Validate parsed values
+  if (isNaN(day) || isNaN(month) || isNaN(year)) {
+    const fallback = new Date(dateStr);
+    return isNaN(fallback) ? new Date() : fallback;
+  }
+
+  // Create Date object using UTC to avoid timezone issues
+  return new Date(Date.UTC(year, month, day));
+}
+
 // === PDF PROCESSING WITH PROGRESS ===
 ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig, isBatesEnabled }) => {
   const jobId = Date.now().toString();
@@ -619,8 +680,14 @@ ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig
     // Create output PDF
     const outputPdf = await PDFDocument.create();
 
-    // Sort rows by date
-    const sortedRows = [...selectedRows].sort((a, b) => new Date(a.date) - new Date(b.date));
+    // Sort rows by date - parse according to user's date format
+    const dateFormat = store.get('dateFormat', 'DD-MM-YYYY');
+    addLog(`Sorting ${selectedRows.length} documents chronologically using ${dateFormat} format`, 'info');
+    const sortedRows = [...selectedRows].sort((a, b) => {
+      const dateA = parseDateStringToDate(a.date, dateFormat);
+      const dateB = parseDateStringToDate(b.date, dateFormat);
+      return dateA - dateB;
+    });
 
     // Validate Bates config
     const batesStart = parseInt(batesConfig.start);

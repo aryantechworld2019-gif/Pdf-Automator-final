@@ -372,6 +372,7 @@ const ClientDashboard = ({ user, onLogout }) => {
   const [isBatesEnabled, setIsBatesEnabled] = useState(false);
 
   const [processedPdfPath, setProcessedPdfPath] = useState(null);
+  const [processingResult, setProcessingResult] = useState(null);
 
   // Progress tracking
   const [processingProgress, setProcessingProgress] = useState({
@@ -475,6 +476,7 @@ const ClientDashboard = ({ user, onLogout }) => {
       if (result.success) {
         setSortedData(result.processedData);
         setProcessedPdfPath(result.outputPath);
+        setProcessingResult(result); // Store full result for ZIP export
         setStep('result');
       } else {
         alert('Error processing PDF: ' + result.error);
@@ -497,10 +499,11 @@ const ClientDashboard = ({ user, onLogout }) => {
     setSortedData([]);
     setIsBatesEnabled(false);
     setProcessedPdfPath(null);
+    setProcessingResult(null);
   };
 
   const handleDownload = async (type) => {
-    if (!processedPdfPath) {
+    if (!processedPdfPath || !processingResult) {
       alert('No processed PDF available!');
       return;
     }
@@ -511,11 +514,15 @@ const ClientDashboard = ({ user, onLogout }) => {
     const result = await window.electronAPI.exportPDF({
       sourcePath: processedPdfPath,
       fileName: filename,
-      type
+      type,
+      // Pass processing result data for ZIP export
+      processingResult: type === 'zip' ? processingResult : undefined
     });
 
     if (result.success) {
       alert(`File saved successfully to:\n${result.path}`);
+    } else if (result.error) {
+      alert(`Error: ${result.error}`);
     }
   };
 

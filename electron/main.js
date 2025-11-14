@@ -4,6 +4,7 @@ const fs = require('fs').promises;
 const Store = require('electron-store');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const XLSX = require('xlsx');
+const AdmZip = require('adm-zip');
 
 // Initialize electron-store for persistent data
 const store = new Store();
@@ -626,7 +627,12 @@ ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig
       outputPath,
       processedData,
       pageCount: outputPdf.getPageCount(),
-      fileSize: outputSizeMB
+      fileSize: outputSizeMB,
+      // Store for ZIP export
+      originalPdfPath: pdfPath,
+      selectedRows: sortedRows,
+      batesConfig,
+      isBatesEnabled
     };
   } catch (error) {
     addLog(`Error processing PDF: ${error.message}`, 'error');
@@ -709,7 +715,7 @@ function parsePageRange(rangeStr, maxPages) {
 }
 
 // === PDF EXPORT ===
-ipcMain.handle('pdf:export', async (event, { sourcePath, fileName, type }) => {
+ipcMain.handle('pdf:export', async (event, { sourcePath, fileName, type, processingResult }) => {
   try {
     const result = await dialog.showSaveDialog(mainWindow, {
       defaultPath: fileName,
@@ -718,14 +724,113 @@ ipcMain.handle('pdf:export', async (event, { sourcePath, fileName, type }) => {
       ]
     });
 
-    if (!result.canceled && result.filePath) {
-      // Copy the processed file to the selected location
+    if (result.canceled || !result.filePath) {
+      return { success: false };
+    }
+
+    // MASTER PDF: Just copy the merged PDF
+    if (type === 'master') {
       await fs.copyFile(sourcePath, result.filePath);
-      addLog(`Exported ${type.toUpperCase()}: ${fileName}`, 'success');
+      addLog(`Exported master PDF: ${fileName}`, 'success');
       return { success: true, path: result.filePath };
     }
 
-    return { success: false };
+    // ZIP: Create separate PDFs for each selected row and zip them
+    if (type === 'zip') {
+      if (!processingResult || !processingResult.originalPdfPath || !processingResult.selectedRows) {
+        throw new Error('Missing processing result data for ZIP export');
+      }
+
+      addLog(`Creating ZIP archive with ${processingResult.selectedRows.length} separate PDFs...`, 'info');
+
+      // Read the original PDF
+      const pdfBytes = await fs.readFile(processingResult.originalPdfPath);
+      const originalPdf = await PDFDocument.load(pdfBytes);
+      const totalPages = originalPdf.getPageCount();
+
+      // Create temp directory for individual PDFs
+      const tempDir = app.getPath('temp');
+      const timestamp = Date.now();
+      const tempPdfDir = path.join(tempDir, `pdf_export_${timestamp}`);
+      await fs.mkdir(tempPdfDir, { recursive: true });
+
+      const createdFiles = [];
+      let batesNumber = parseInt(processingResult.batesConfig?.start || 1);
+
+      // Create individual PDF for each selected row
+      for (const row of processingResult.selectedRows) {
+        try {
+          // Create new PDF for this document
+          const docPdf = await PDFDocument.create();
+          const pageRange = parsePageRange(row.pages, totalPages);
+
+          if (pageRange.length === 0) {
+            addLog(`Warning: No valid pages for "${row.docType}"`, 'warning');
+            continue;
+          }
+
+          const startBates = batesNumber;
+
+          // Copy pages from original PDF
+          for (const pageNum of pageRange) {
+            const [copiedPage] = await docPdf.copyPages(originalPdf, [pageNum - 1]);
+            docPdf.addPage(copiedPage);
+
+            // Apply Bates stamp if enabled
+            if (processingResult.isBatesEnabled) {
+              const addedPage = docPdf.getPage(docPdf.getPageCount() - 1);
+              await applyBatesStamp(addedPage, batesNumber, processingResult.batesConfig);
+              batesNumber++;
+            }
+          }
+
+          // Sanitize filename
+          const sanitizedDocType = row.docType
+            .replace(/[^a-zA-Z0-9_\-\s]/g, '')
+            .replace(/\s+/g, '_')
+            .substring(0, 100); // Limit length
+
+          const pdfFileName = `${sanitizedDocType}.pdf`;
+          const pdfFilePath = path.join(tempPdfDir, pdfFileName);
+
+          // Save individual PDF
+          const docPdfBytes = await docPdf.save();
+          await fs.writeFile(pdfFilePath, docPdfBytes);
+          createdFiles.push(pdfFilePath);
+
+          const endBates = processingResult.isBatesEnabled ? batesNumber - 1 : null;
+          const batesInfo = endBates ? ` (Bates: ${formatBates(startBates, processingResult.batesConfig.digits)}-${formatBates(endBates, processingResult.batesConfig.digits)})` : '';
+          addLog(`Created: ${pdfFileName}${batesInfo}`, 'success');
+        } catch (error) {
+          addLog(`Error creating PDF for "${row.docType}": ${error.message}`, 'error');
+        }
+      }
+
+      if (createdFiles.length === 0) {
+        throw new Error('No PDF files were created');
+      }
+
+      // Create ZIP archive
+      const zip = new AdmZip();
+      for (const filePath of createdFiles) {
+        const fileName = path.basename(filePath);
+        zip.addLocalFile(filePath, '', fileName);
+      }
+
+      // Write ZIP to selected location
+      await zip.writeZipPromise(result.filePath);
+
+      // Cleanup temp files
+      for (const filePath of createdFiles) {
+        await fs.unlink(filePath).catch(() => {});
+      }
+      await fs.rmdir(tempPdfDir).catch(() => {});
+
+      addLog(`ZIP archive created: ${createdFiles.length} PDFs exported`, 'success');
+      return { success: true, path: result.filePath };
+    }
+
+    throw new Error('Invalid export type');
   } catch (error) {
     addLog(`Export error: ${error.message}`, 'error');
     return { success: false, error: error.message };

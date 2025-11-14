@@ -404,18 +404,8 @@ function formatExcelDate(value, worksheet, cellAddress) {
     // Excel dates are typically between 1 (Jan 1, 1900) and ~100000
     if (numValue > 1 && numValue < 100000) {
       try {
-        // Check if cell has date formatting (if worksheet and cellAddress provided)
-        if (worksheet && cellAddress) {
-          const cell = worksheet[cellAddress];
-          if (cell && cell.t === 'n' && cell.w) {
-            // Cell is numeric with formatted display - likely a date
-            // Try to parse the formatted value
-            const formatted = cell.w;
-            if (formatted.includes('/') || formatted.includes('-')) {
-              return formatted;
-            }
-          }
-        }
+        // Don't use cell.w directly as it may have inconsistent formatting (e.g., "7/6/24" with 2-digit year)
+        // Always use standardized parsing for consistency
 
         // Use XLSX's built-in date conversion
         // XLSX.SSF.parse_date_code returns {y, m, d, H, M, S}
@@ -543,6 +533,41 @@ ipcMain.handle('excel:parse', async (event, filePath) => {
       };
     });
 
+    // Data quality checks
+    const docTypeCount = {};
+    const blankPages = [];
+    const duplicates = [];
+
+    transformedData.forEach((item, idx) => {
+      const docType = item.docType.toLowerCase().trim();
+
+      // Track document type counts for duplicate detection
+      if (!docTypeCount[docType]) {
+        docTypeCount[docType] = [];
+      }
+      docTypeCount[docType].push(idx + 1);
+
+      // Detect blank pages
+      if (docType.includes('blank')) {
+        blankPages.push(`Row ${idx + 1}: ${item.docType}`);
+      }
+    });
+
+    // Report duplicates
+    Object.keys(docTypeCount).forEach(docType => {
+      if (docTypeCount[docType].length > 1) {
+        duplicates.push(`"${docType}" appears ${docTypeCount[docType].length} times (rows: ${docTypeCount[docType].join(', ')})`);
+      }
+    });
+
+    if (blankPages.length > 0) {
+      addLog(`Warning: Found ${blankPages.length} blank page(s): ${blankPages.join('; ')}`, 'warning');
+    }
+
+    if (duplicates.length > 0) {
+      addLog(`Warning: Duplicate document types detected - ${duplicates.join('; ')}`, 'warning');
+    }
+
     addLog(`Successfully parsed ${transformedData.length} records from Excel`, 'success');
     return { success: true, data: transformedData };
   } catch (error) {
@@ -631,6 +656,12 @@ function parseDateStringToDate(dateString, format) {
     return isNaN(fallback) ? new Date() : fallback;
   }
 
+  // Handle 2-digit years (e.g., "24" → "2024")
+  if (year < 100) {
+    // Assume 2000s for years 00-99
+    year = 2000 + year;
+  }
+
   // Create Date object using UTC to avoid timezone issues
   return new Date(Date.UTC(year, month, day));
 }
@@ -683,11 +714,28 @@ ipcMain.handle('pdf:process', async (event, { pdfPath, selectedRows, batesConfig
     // Sort rows by date - parse according to user's date format
     const dateFormat = store.get('dateFormat', 'DD-MM-YYYY');
     addLog(`Sorting ${selectedRows.length} documents chronologically using ${dateFormat} format`, 'info');
+
+    // Log first few dates before sorting (for debugging)
+    if (selectedRows.length > 0) {
+      const sampleDates = selectedRows.slice(0, Math.min(5, selectedRows.length))
+        .map(r => `"${r.docType}": ${r.date}`)
+        .join(', ');
+      addLog(`Sample dates before sort: ${sampleDates}`, 'info');
+    }
+
     const sortedRows = [...selectedRows].sort((a, b) => {
       const dateA = parseDateStringToDate(a.date, dateFormat);
       const dateB = parseDateStringToDate(b.date, dateFormat);
       return dateA - dateB;
     });
+
+    // Log first few dates after sorting (for verification)
+    if (sortedRows.length > 0) {
+      const sampleSorted = sortedRows.slice(0, Math.min(5, sortedRows.length))
+        .map(r => `"${r.docType}": ${r.date}`)
+        .join(', ');
+      addLog(`Sample dates after sort: ${sampleSorted}`, 'info');
+    }
 
     // Validate Bates config
     const batesStart = parseInt(batesConfig.start);
